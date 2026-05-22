@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { io } from 'socket.io-client';
-import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIcon, Code, Terminal } from 'lucide-react';
+import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIcon, Code, Terminal, ExternalLink, ClipboardPaste } from 'lucide-react';
 
 const serverUrl = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
 const socket = io(serverUrl);
@@ -12,7 +12,7 @@ function App() {
   const [logs, setLogs] = useState('');
   const [images, setImages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [activeTab, setActiveTab] = useState('editor'); // 'editor', 'console', 'assets'
+  const [activeTab, setActiveTab] = useState('editor');
   
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -35,7 +35,7 @@ function App() {
     if (!token) return alert('Discord Botのトークンを入力してください');
     setIsRunning(true);
     setLogs('起動リクエストを送信...\n');
-    setActiveTab('console'); // 起動したら自動でコンソールタブへ移動
+    setActiveTab('console');
     socket.emit('startBot', { code, token });
   };
 
@@ -44,13 +44,31 @@ function App() {
     setIsRunning(false);
   };
 
-  const handleAction = (action) => {
+  // クリップボードからトークンを貼り付け
+  const handlePasteToken = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setToken(text);
+    } catch (err) {
+      alert('ブラウザの設定でブロックされました。入力欄を長押しして直接貼り付けてください。');
+    }
+  };
+
+  const handleAction = async (action) => {
     const editor = editorRef.current;
     if (!editor) return;
     switch (action) {
       case 'undo': editor.trigger('keyboard', 'undo', null); break;
       case 'clear': if(window.confirm('全消去しますか？')) setCode(''); break;
       case 'copy': navigator.clipboard.writeText(editor.getValue()); alert('コピーしました'); break;
+      case 'paste': 
+        try {
+          const text = await navigator.clipboard.readText();
+          editor.executeEdits("paste", [{ range: editor.getSelection(), text: text, forceMoveMarkers: true }]);
+        } catch (err) {
+          alert('ブラウザの設定でブロックされました。画面を長押しして直接貼り付けてください。');
+        }
+        break;
       case 'search': editor.getAction('actions.find').run(); break;
     }
   };
@@ -70,42 +88,63 @@ function App() {
   };
 
   return (
-    // h-[100dvh] でスマホのアドレスバー領域を考慮して画面に収める
     <div className="flex flex-col h-[100dvh] bg-[#1e1e1e] text-white overflow-hidden">
       
-      {/* トップヘッダー (トークン入力と起動ボタン) */}
-      <div className="flex items-center justify-between p-2 bg-[#333333] border-b border-gray-700 space-x-2">
-        <input
-          type="password"
-          placeholder="Bot Token..."
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          className="flex-1 bg-[#1e1e1e] text-white px-3 py-2 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500 w-full"
-        />
-        {!isRunning ? (
-          <button onClick={startBot} className="flex items-center justify-center bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm font-bold transition whitespace-nowrap">
-            <Play className="w-4 h-4 mr-1"/> 起動
+      {/* トップヘッダー (2段構成に変更) */}
+      <div className="flex flex-col p-2 bg-[#333333] border-b border-gray-700 space-y-2">
+        {/* 上段：リンクと起動/停止ボタン */}
+        <div className="flex items-center justify-between">
+          <a 
+            href="https://discord.com/developers/applications" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center text-xs text-blue-400 hover:text-blue-300 font-bold bg-[#252526] px-3 py-1.5 rounded border border-gray-600 transition"
+          >
+            <ExternalLink className="w-3 h-3 mr-1" /> トークン作成ページ
+          </a>
+          {!isRunning ? (
+            <button onClick={startBot} className="flex items-center justify-center bg-green-600 hover:bg-green-700 px-4 py-1.5 rounded text-sm font-bold transition whitespace-nowrap">
+              <Play className="w-4 h-4 mr-1"/> 起動
+            </button>
+          ) : (
+            <button onClick={stopBot} className="flex items-center justify-center bg-red-600 hover:bg-red-700 px-4 py-1.5 rounded text-sm font-bold transition whitespace-nowrap">
+              <Square className="w-4 h-4 mr-1"/> 停止
+            </button>
+          )}
+        </div>
+
+        {/* 下段：トークン入力と貼り付けボタン */}
+        <div className="flex items-center space-x-2">
+          <input
+            type="password"
+            placeholder="Bot Tokenを貼り付け..."
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            className="flex-1 bg-[#1e1e1e] text-white px-3 py-2 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500 w-full"
+          />
+          <button 
+            onClick={handlePasteToken} 
+            className="flex items-center justify-center bg-gray-600 hover:bg-gray-500 p-2 rounded text-sm font-bold transition"
+            title="クリップボードから貼り付け"
+          >
+            <ClipboardPaste className="w-5 h-5" />
           </button>
-        ) : (
-          <button onClick={stopBot} className="flex items-center justify-center bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm font-bold transition whitespace-nowrap">
-            <Square className="w-4 h-4 mr-1"/> 停止
-          </button>
-        )}
+        </div>
       </div>
 
-      {/* エディタ用ツールバー (コードタブを開いている時だけ表示) */}
+      {/* エディタ用ツールバー */}
       {activeTab === 'editor' && (
         <div className="flex justify-around bg-[#252526] p-1 border-b border-gray-700">
-          <button onClick={() => handleAction('undo')} className="p-3 text-gray-300 hover:text-white"><Undo className="w-5 h-5"/></button>
-          <button onClick={() => handleAction('clear')} className="p-3 text-gray-300 hover:text-white"><Trash2 className="w-5 h-5"/></button>
-          <button onClick={() => handleAction('copy')} className="p-3 text-gray-300 hover:text-white"><Copy className="w-5 h-5"/></button>
-          <button onClick={() => handleAction('search')} className="p-3 text-gray-300 hover:text-white"><Search className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('undo')} className="p-3 text-gray-300 hover:text-white" title="元に戻す"><Undo className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('paste')} className="p-3 text-gray-300 hover:text-white" title="貼り付け"><ClipboardPaste className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('clear')} className="p-3 text-gray-300 hover:text-white" title="全消去"><Trash2 className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('copy')} className="p-3 text-gray-300 hover:text-white" title="コピー"><Copy className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('search')} className="p-3 text-gray-300 hover:text-white" title="検索"><Search className="w-5 h-5"/></button>
         </div>
       )}
 
-      {/* メインコンテンツ (タブの中身) */}
+      {/* メインコンテンツ */}
       <div className="flex-1 relative overflow-hidden bg-[#1e1e1e]">
-        
         {/* 1. コードエディタ */}
         <div className={`h-full ${activeTab === 'editor' ? 'block' : 'hidden'}`}>
           <Editor
@@ -118,7 +157,7 @@ function App() {
             options={{ 
               minimap: { enabled: false }, 
               fontSize: 14, 
-              wordWrap: 'on', // スマホ用にコードを折り返す
+              wordWrap: 'on',
               padding: { top: 12 },
               lineNumbersMinChars: 3
             }}
@@ -156,10 +195,9 @@ function App() {
             ))}
           </div>
         </div>
-
       </div>
 
-      {/* ボトムナビゲーション (画面下のタブ) */}
+      {/* ボトムナビゲーション */}
       <div className="flex bg-[#252526] border-t border-gray-700 h-16 pb-safe">
         <button onClick={() => setActiveTab('editor')} className={`flex-1 flex flex-col items-center justify-center ${activeTab === 'editor' ? 'text-blue-400' : 'text-gray-400'}`}>
           <Code className="w-6 h-6 mb-1"/>
