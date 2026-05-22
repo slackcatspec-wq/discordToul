@@ -1,0 +1,11 @@
+# 依存関係（これが重い原因です）
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# ビルドファイルやアップロード画像
+client/dist/
+server/uploads/
+
+# その他OSの隠しファイル
+.DS_Store

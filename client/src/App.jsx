@@ -1,18 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { io } from 'socket.io-client';
-import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIcon } from 'lucide-react';
+import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIcon, Code, Terminal } from 'lucide-react';
 
-// 開発中はポート3000、本番は同一オリジン
 const serverUrl = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
 const socket = io(serverUrl);
 
 function App() {
-  const [code, setCode] = useState('const { Client, GatewayIntentBits } = require("discord.js");\n\nconst client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });\n\nclient.once("ready", () => {\n  console.log(`Logged in as ${client.user.tag}!`);\n});\n\n// tokenは画面上部で入力するためコード内には書きません\nclient.login(process.env.DISCORD_TOKEN);');
+  const [code, setCode] = useState('const { Client, GatewayIntentBits } = require("discord.js");\n\nconst client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });\n\nclient.once("ready", () => {\n  console.log(`Logged in as ${client.user.tag}!`);\n});\n\nclient.login(process.env.DISCORD_TOKEN);');
   const [token, setToken] = useState('');
   const [logs, setLogs] = useState('');
   const [images, setImages] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [activeTab, setActiveTab] = useState('editor'); // 'editor', 'console', 'assets'
   
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -35,6 +35,7 @@ function App() {
     if (!token) return alert('Discord Botのトークンを入力してください');
     setIsRunning(true);
     setLogs('起動リクエストを送信...\n');
+    setActiveTab('console'); // 起動したら自動でコンソールタブへ移動
     socket.emit('startBot', { code, token });
   };
 
@@ -46,116 +47,67 @@ function App() {
   const handleAction = (action) => {
     const editor = editorRef.current;
     if (!editor) return;
-
     switch (action) {
-      case 'undo':
-        editor.trigger('keyboard', 'undo', null);
-        break;
-      case 'clear':
-        if(window.confirm('コードを全消去しますか？')) setCode('');
-        break;
-      case 'copy':
-        navigator.clipboard.writeText(editor.getValue());
-        alert('コードをコピーしました');
-        break;
-      case 'search':
-        editor.getAction('actions.find').run();
-        break;
+      case 'undo': editor.trigger('keyboard', 'undo', null); break;
+      case 'clear': if(window.confirm('全消去しますか？')) setCode(''); break;
+      case 'copy': navigator.clipboard.writeText(editor.getValue()); alert('コピーしました'); break;
+      case 'search': editor.getAction('actions.find').run(); break;
     }
   };
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const formData = new FormData();
     formData.append('image', file);
-
     try {
-      const res = await fetch(`${serverUrl}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch(`${serverUrl}/api/upload`, { method: 'POST', body: formData });
       const data = await res.json();
       setImages([...images, { name: file.name, path: data.path }]);
     } catch (err) {
-      alert('画像のアップロードに失敗しました');
+      alert('アップロード失敗');
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#1e1e1e] text-white overflow-hidden">
-      {/* 左サイドバー: 画像管理 */}
-      <div className="w-64 border-r border-gray-700 p-4 bg-[#252526] flex flex-col">
-        <h2 className="text-sm font-bold mb-4 flex items-center text-gray-300">
-          <FolderPlus className="w-4 h-4 mr-2" /> アセット
-        </h2>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          className="hidden" 
-          accept="image/*"
-          onChange={handleImageUpload}
+    // h-[100dvh] でスマホのアドレスバー領域を考慮して画面に収める
+    <div className="flex flex-col h-[100dvh] bg-[#1e1e1e] text-white overflow-hidden">
+      
+      {/* トップヘッダー (トークン入力と起動ボタン) */}
+      <div className="flex items-center justify-between p-2 bg-[#333333] border-b border-gray-700 space-x-2">
+        <input
+          type="password"
+          placeholder="Bot Token..."
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="flex-1 bg-[#1e1e1e] text-white px-3 py-2 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500 w-full"
         />
-        <button 
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-sm py-2 rounded mb-4 transition duration-200"
-        >
-          画像をアップロード
-        </button>
-        <div className="space-y-2 overflow-y-auto flex-1">
-          {images.map((img, i) => (
-            <div key={i} className="flex justify-between items-center p-2 bg-[#333333] rounded text-xs group">
-              <span className="truncate flex items-center w-2/3">
-                <ImageIcon className="w-3 h-3 mr-2 shrink-0"/>
-                {img.name}
-              </span>
-              <button 
-                onClick={() => {
-                  navigator.clipboard.writeText(img.path);
-                  alert('パスをコピーしました: ' + img.path);
-                }}
-                className="text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100 transition"
-              >
-                パス複製
-              </button>
-            </div>
-          ))}
-        </div>
+        {!isRunning ? (
+          <button onClick={startBot} className="flex items-center justify-center bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm font-bold transition whitespace-nowrap">
+            <Play className="w-4 h-4 mr-1"/> 起動
+          </button>
+        ) : (
+          <button onClick={stopBot} className="flex items-center justify-center bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm font-bold transition whitespace-nowrap">
+            <Square className="w-4 h-4 mr-1"/> 停止
+          </button>
+        )}
       </div>
 
-      {/* メインエディタエリア */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* トップツールバー */}
-        <div className="h-14 border-b border-gray-700 bg-[#333333] flex items-center justify-between px-4">
-          <div className="flex space-x-3 items-center">
-            <input
-              type="password"
-              placeholder="Bot Tokenを入力..."
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="bg-[#1e1e1e] text-white px-3 py-1.5 rounded text-sm w-72 border border-gray-600 focus:outline-none focus:border-blue-500"
-            />
-            {!isRunning ? (
-              <button onClick={startBot} className="flex items-center bg-green-600 hover:bg-green-700 px-4 py-1.5 rounded text-sm font-bold transition">
-                <Play className="w-4 h-4 mr-1.5"/> 起動
-              </button>
-            ) : (
-              <button onClick={stopBot} className="flex items-center bg-red-600 hover:bg-red-700 px-4 py-1.5 rounded text-sm font-bold transition">
-                <Square className="w-4 h-4 mr-1.5"/> 停止
-              </button>
-            )}
-          </div>
-          <div className="flex space-x-1">
-            <button onClick={() => handleAction('undo')} className="p-2 hover:bg-gray-600 rounded text-gray-300 transition" title="1つ戻る"><Undo className="w-4 h-4"/></button>
-            <button onClick={() => handleAction('clear')} className="p-2 hover:bg-gray-600 rounded text-gray-300 transition" title="全消去"><Trash2 className="w-4 h-4"/></button>
-            <button onClick={() => handleAction('copy')} className="p-2 hover:bg-gray-600 rounded text-gray-300 transition" title="全コピー"><Copy className="w-4 h-4"/></button>
-            <button onClick={() => handleAction('search')} className="p-2 hover:bg-gray-600 rounded text-gray-300 transition" title="検索"><Search className="w-4 h-4"/></button>
-          </div>
+      {/* エディタ用ツールバー (コードタブを開いている時だけ表示) */}
+      {activeTab === 'editor' && (
+        <div className="flex justify-around bg-[#252526] p-1 border-b border-gray-700">
+          <button onClick={() => handleAction('undo')} className="p-3 text-gray-300 hover:text-white"><Undo className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('clear')} className="p-3 text-gray-300 hover:text-white"><Trash2 className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('copy')} className="p-3 text-gray-300 hover:text-white"><Copy className="w-5 h-5"/></button>
+          <button onClick={() => handleAction('search')} className="p-3 text-gray-300 hover:text-white"><Search className="w-5 h-5"/></button>
         </div>
+      )}
 
-        {/* エディタ */}
-        <div className="flex-1 relative">
+      {/* メインコンテンツ (タブの中身) */}
+      <div className="flex-1 relative overflow-hidden bg-[#1e1e1e]">
+        
+        {/* 1. コードエディタ */}
+        <div className={`h-full ${activeTab === 'editor' ? 'block' : 'hidden'}`}>
           <Editor
             height="100%"
             theme="vs-dark"
@@ -163,27 +115,66 @@ function App() {
             value={code}
             onChange={(val) => setCode(val)}
             onMount={handleEditorDidMount}
-            options={{ minimap: { enabled: false }, fontSize: 15, padding: { top: 16 } }}
+            options={{ 
+              minimap: { enabled: false }, 
+              fontSize: 14, 
+              wordWrap: 'on', // スマホ用にコードを折り返す
+              padding: { top: 12 },
+              lineNumbersMinChars: 3
+            }}
           />
         </div>
-      </div>
 
-      {/* ターミナル（ログ）エリア */}
-      <div className="w-96 border-l border-gray-700 bg-[#1e1e1e] flex flex-col">
-        <div className="p-3 border-b border-gray-700 bg-[#252526] text-sm font-bold text-gray-300 flex justify-between items-center">
-          <span>コンソール出力</span>
-          <button 
-            onClick={() => setLogs('')}
-            className="text-xs text-gray-400 hover:text-white transition"
-          >
-            クリア
+        {/* 2. コンソールログ */}
+        <div className={`h-full flex flex-col ${activeTab === 'console' ? 'block' : 'hidden'}`}>
+          <div className="flex-1 p-3 overflow-y-auto font-mono text-xs whitespace-pre-wrap text-[#4af626] bg-black">
+            {logs}
+            <div ref={logsEndRef} />
+          </div>
+          <button onClick={() => setLogs('')} className="p-3 bg-gray-800 text-xs font-bold text-center border-t border-gray-700 active:bg-gray-700">
+            ログをクリア
           </button>
         </div>
-        <div className="flex-1 p-4 overflow-y-auto font-mono text-sm whitespace-pre-wrap text-[#4af626] bg-black">
-          {logs}
-          <div ref={logsEndRef} />
+
+        {/* 3. 画像アセット */}
+        <div className={`h-full flex flex-col p-4 overflow-y-auto ${activeTab === 'assets' ? 'block' : 'hidden'}`}>
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+          <button onClick={() => fileInputRef.current?.click()} className="w-full bg-blue-600 py-3 rounded-lg text-sm font-bold mb-4 flex justify-center items-center active:bg-blue-700">
+            <FolderPlus className="w-5 h-5 mr-2" /> 画像をアップロード
+          </button>
+          <div className="space-y-3">
+            {images.map((img, i) => (
+              <div key={i} className="flex flex-col p-3 bg-[#333333] rounded-lg border border-gray-700">
+                <span className="text-sm truncate mb-3">{img.name}</span>
+                <button 
+                  onClick={() => { navigator.clipboard.writeText(img.path); alert('パスをコピーしました\n' + img.path); }} 
+                  className="bg-gray-600 py-2 rounded text-xs font-bold active:bg-gray-500"
+                >
+                  パスをコピー
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
+
       </div>
+
+      {/* ボトムナビゲーション (画面下のタブ) */}
+      <div className="flex bg-[#252526] border-t border-gray-700 h-16 pb-safe">
+        <button onClick={() => setActiveTab('editor')} className={`flex-1 flex flex-col items-center justify-center ${activeTab === 'editor' ? 'text-blue-400' : 'text-gray-400'}`}>
+          <Code className="w-6 h-6 mb-1"/>
+          <span className="text-[10px] font-bold">コード</span>
+        </button>
+        <button onClick={() => setActiveTab('console')} className={`flex-1 flex flex-col items-center justify-center ${activeTab === 'console' ? 'text-blue-400' : 'text-gray-400'}`}>
+          <Terminal className="w-6 h-6 mb-1"/>
+          <span className="text-[10px] font-bold">コンソール</span>
+        </button>
+        <button onClick={() => setActiveTab('assets')} className={`flex-1 flex flex-col items-center justify-center ${activeTab === 'assets' ? 'text-blue-400' : 'text-gray-400'}`}>
+          <ImageIcon className="w-6 h-6 mb-1"/>
+          <span className="text-[10px] font-bold">アセット</span>
+        </button>
+      </div>
+
     </div>
   );
 }
