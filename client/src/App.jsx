@@ -139,9 +139,21 @@ function App() {
         <div className={`h-full flex flex-col p-4 overflow-y-auto ${activeTab === 'bots' ? 'block' : 'hidden'}`}>
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold">Bot一覧</h2>
-            <button onClick={() => setBots([...bots, { id: Date.now().toString(), name: `Bot ${bots.length + 1}`, code: defaultCode, token: '', isRunning: false }])} className="flex items-center bg-blue-600 px-3 py-1.5 rounded text-sm font-bold">
-              <Plus className="w-4 h-4 mr-1"/> 新規作成
-            </button>
+            <div className="flex space-x-2">
+              {/* ★ 追加: Discord Developer Portalへのリンクボタン */}
+              <a 
+                href="https://discord.com/developers/applications" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex items-center bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-sm font-bold"
+                title="Discord Developer Portal"
+              >
+                <ExternalLink className="w-4 h-4 mr-1"/> Portal
+              </a>
+              <button onClick={() => setBots([...bots, { id: Date.now().toString(), name: `Bot ${bots.length + 1}`, code: defaultCode, token: '', isRunning: false }])} className="flex items-center bg-blue-600 px-3 py-1.5 rounded text-sm font-bold">
+                <Plus className="w-4 h-4 mr-1"/> 新規作成
+              </button>
+            </div>
           </div>
           <div className="space-y-3">
             {bots.map((b) => (

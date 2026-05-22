@@ -43,7 +43,8 @@ io.on('connection', (socket) => {
     // 既に同じBotが動いていればキルする
     if (activeBots.has(id)) activeBots.get(id).kill();
 
-    const botCodePath = path.join(__dirname, `temp_bot_${id}.js`);
+    // ★ 拡張子を .cjs に変更することで、"type": "module" 環境下でも require が使用可能になります
+    const botCodePath = path.join(__dirname, `temp_bot_${id}.cjs`);
     fs.writeFileSync(botCodePath, `process.env.DISCORD_TOKEN = "${token}";\n${code}`);
     
     socket.emit('log', { id, text: 'Botを起動中...\n' });
@@ -57,6 +58,11 @@ io.on('connection', (socket) => {
       socket.emit('log', { id, text: `\nBotプロセスが終了しました (コード: ${codeStatus})` });
       activeBots.delete(id);
       socket.emit('botStopped', { id }); // フロントに停止を通知
+      
+      // クリーンアップ: 不要になった一時ファイルを削除（オプションですが推奨）
+      if (fs.existsSync(botCodePath)) {
+        fs.unlinkSync(botCodePath);
+      }
     });
   });
 
