@@ -6,7 +6,8 @@ import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIco
 const serverUrl = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
 const socket = io(serverUrl);
 
-const defaultCode = 'const { Client, GatewayIntentBits } = require("discord.js");\n\nconst client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });\n\nclient.once("ready", () => {\n  console.log(`Logged in as ${client.user.tag}!`);\n});\n\nclient.login(process.env.DISCORD_TOKEN);';
+// ★ client.once("ready", ...) から client.once("clientReady", ...) に修正しました
+const defaultCode = 'const { Client, GatewayIntentBits } = require("discord.js");\n\nconst client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });\n\nclient.once("clientReady", () => {\n  console.log(`Logged in as ${client.user.tag}!`);\n});\n\nclient.login(process.env.DISCORD_TOKEN);';
 
 function App() {
   // ★ 複数Botのデータ管理（ローカルストレージから復元）
@@ -140,7 +141,6 @@ function App() {
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold">Bot一覧</h2>
             <div className="flex space-x-2">
-              {/* ★ 追加: Discord Developer Portalへのリンクボタン */}
               <a 
                 href="https://discord.com/developers/applications" 
                 target="_blank" 
