@@ -6,16 +6,14 @@ import { Play, Square, Undo, Trash2, Copy, Search, FolderPlus, Image as ImageIco
 const serverUrl = import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin;
 const socket = io(serverUrl);
 
-// ★ client.once("ready", ...) から client.once("clientReady", ...) に修正しました
 const defaultCode = 'const { Client, GatewayIntentBits } = require("discord.js");\n\nconst client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });\n\nclient.once("clientReady", () => {\n  console.log(`Logged in as ${client.user.tag}!`);\n});\n\nclient.login(process.env.DISCORD_TOKEN);';
 
 function App() {
-  // ★ 複数Botのデータ管理（ローカルストレージから復元）
+  // 複数Botのデータ管理
   const [bots, setBots] = useState(() => {
     const saved = localStorage.getItem('ide_bots');
     if (saved) {
       try {
-        // リロード時は安全のため起動状態を一旦falseにする
         return JSON.parse(saved).map(b => ({...b, isRunning: false}));
       } catch(e) {}
     }
@@ -25,9 +23,18 @@ function App() {
   const [currentBotId, setCurrentBotId] = useState(bots[0].id);
   const currentBot = bots.find(b => b.id === currentBotId) || bots[0];
   
-  const [logs, setLogs] = useState({}); // { botId: 'logs...' }
-  const [images, setImages] = useState([]);
-  const [activeTab, setActiveTab] = useState('bots'); // 'bots', 'editor', 'console', 'assets'
+  const [logs, setLogs] = useState({});
+  
+  // ★ 画像データの管理（リロードしても消えないようにlocalStorage対応）
+  const [images, setImages] = useState(() => {
+    const savedImages = localStorage.getItem('ide_images');
+    if (savedImages) {
+      try { return JSON.parse(savedImages); } catch(e) {}
+    }
+    return [];
+  });
+
+  const [activeTab, setActiveTab] = useState('bots');
   
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -37,6 +44,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('ide_bots', JSON.stringify(bots));
   }, [bots]);
+
+  useEffect(() => {
+    localStorage.setItem('ide_images', JSON.stringify(images));
+  }, [images]);
 
   useEffect(() => {
     socket.on('log', ({ id, text }) => setLogs(prev => ({ ...prev, [id]: (prev[id] || '') + text })));
@@ -80,21 +91,46 @@ function App() {
     }
   };
 
+  // ★ 画像アップロード時の処理（名前変更機能を追加）
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const formData = new FormData(); formData.append('image', file);
+
+    // ファイル名と拡張子を分ける
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'png';
+    const baseName = file.name.includes('.') ? file.name.substring(0, file.name.lastIndexOf('.')) : file.name;
+
+    // ユーザーに新しい名前を入力させる
+    let newName = window.prompt('保存する画像の名前を入力してください（半角英数字推奨）\n※スマホの画像は名前が被りやすいため変更をおすすめします', baseName);
+    
+    if (newName === null) {
+      e.target.value = ''; // キャンセル時はリセット
+      return; 
+    }
+    
+    // 空欄なら元の名前かタイムスタンプを使う
+    newName = newName.trim() || baseName || `image_${Date.now()}`;
+    const newFileName = `${newName}.${ext}`;
+
+    // 新しい名前でファイルを再作成（サーバー側のコード変更なしで対応）
+    const renamedFile = new File([file], newFileName, { type: file.type });
+    const formData = new FormData(); 
+    formData.append('image', renamedFile);
+
     try {
       const res = await fetch(`${serverUrl}/api/upload`, { method: 'POST', body: formData });
       const data = await res.json();
-      setImages([...images, { name: file.name, path: data.path }]);
-    } catch (err) { alert('アップロード失敗'); }
+      setImages([...images, { name: newFileName, path: data.path }]);
+    } catch (err) { 
+      alert('アップロードに失敗しました'); 
+    }
+    e.target.value = ''; // 次回も同じファイルを選べるようにリセット
   };
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#1e1e1e] text-white overflow-hidden">
       
-      {/* トップヘッダー: 選択中のBotを操作 */}
+      {/* トップヘッダー */}
       <div className="flex flex-col p-2 bg-[#333333] border-b border-gray-700 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold truncate flex items-center">
@@ -123,6 +159,7 @@ function App() {
         </div>
       </div>
 
+      {/* エディタのツールバー */}
       {activeTab === 'editor' && (
         <div className="flex justify-around bg-[#252526] p-1 border-b border-gray-700">
           <button onClick={() => handleAction('undo')} className="p-3 text-gray-300"><Undo className="w-5 h-5"/></button>
@@ -206,16 +243,30 @@ function App() {
           <button onClick={() => setLogs(prev => ({...prev, [currentBotId]: ''}))} className="p-3 bg-gray-800 text-xs font-bold border-t border-gray-700">ログをクリア</button>
         </div>
 
-        {/* 4. 画像アセット */}
+        {/* 4. 画像アセット (★名前変更＆削除機能を追加) */}
         <div className={`h-full flex flex-col p-4 overflow-y-auto ${activeTab === 'assets' ? 'block' : 'hidden'}`}>
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-          <button onClick={() => fileInputRef.current?.click()} className="w-full bg-blue-600 py-3 rounded-lg text-sm font-bold mb-4 flex justify-center"><FolderPlus className="w-5 h-5 mr-2" /> 画像アップロード</button>
-          {images.map((img, i) => (
-            <div key={i} className="p-3 mb-2 bg-[#333333] rounded-lg border border-gray-700">
-              <span className="text-sm truncate block mb-2">{img.name}</span>
-              <button onClick={() => { navigator.clipboard.writeText(img.path); alert('コピー済'); }} className="bg-gray-600 px-3 py-1.5 rounded text-xs">パスをコピー</button>
-            </div>
-          ))}
+          <button onClick={() => fileInputRef.current?.click()} className="w-full bg-blue-600 py-3 rounded-lg text-sm font-bold mb-4 flex justify-center items-center">
+            <FolderPlus className="w-5 h-5 mr-2" /> 画像アップロード
+          </button>
+          <div className="space-y-3">
+            {images.map((img, i) => (
+              <div key={i} className="p-3 bg-[#333333] rounded-lg border border-gray-700 flex flex-col">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-sm truncate font-bold text-gray-200">{img.name}</span>
+                  <button onClick={() => setImages(images.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-400 p-1 transition" title="リストから削除">
+                    <Trash2 className="w-4 h-4"/>
+                  </button>
+                </div>
+                <button onClick={() => { navigator.clipboard.writeText(img.path); alert(`コピーしました:\n${img.path}`); }} className="bg-gray-600 hover:bg-gray-500 py-2 rounded text-xs font-bold transition w-full">
+                  パスをコピー
+                </button>
+              </div>
+            ))}
+            {images.length === 0 && (
+              <div className="text-center text-gray-500 text-sm mt-4">アップロードされた画像はありません</div>
+            )}
+          </div>
         </div>
       </div>
 
